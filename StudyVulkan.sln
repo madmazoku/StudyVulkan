@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30523.141
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StudyVulkan", "StudyVulkan.vcxproj", "{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Debug|x64.ActiveCfg = Debug|x64
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Debug|x64.Build.0 = Debug|x64
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Debug|x86.ActiveCfg = Debug|Win32
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Debug|x86.Build.0 = Debug|Win32
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Release|x64.ActiveCfg = Release|x64
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Release|x64.Build.0 = Release|x64
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Release|x86.ActiveCfg = Release|Win32
+		{CEF86EA6-BB3D-4E6D-BF40-A46D2A53BAE9}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4F2F0EA2-535C-4C0A-91AE-593BE7B0BC89}
+	EndGlobalSection
+EndGlobal
