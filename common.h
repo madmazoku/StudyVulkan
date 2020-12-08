@@ -12,6 +12,8 @@
 #include <sstream>
 
 #include <vector>
+#include <map>
+#include <optional>
 
 #ifdef _DEBUG
 #define NDEBUG

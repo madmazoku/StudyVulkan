@@ -46,7 +46,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL SVKApp::DebugCallback(
 	return static_cast<SVKApp*>(pUserData)->DebugCallback(messageSeverity, messageType, pCallbackData) ? VK_TRUE : VK_FALSE;
 }
 
-SVKApp::SVKApp() : m_window(nullptr), m_instance(0), m_debugMessenger(0)
+SVKApp::SVKApp() : m_window(nullptr), m_instance(VK_NULL_HANDLE), m_debugMessenger(VK_NULL_HANDLE)
 {
 }
 
@@ -81,6 +81,7 @@ void SVKApp::InitializeVulkan() {
 	CreateInstance();
 	if (g_enableVkValidationLayers)
 		CreateDebugMessenger();
+	CreatePhysicalDevice();
 }
 
 void SVKApp::CreateInstance() {
@@ -209,6 +210,88 @@ void SVKApp::CreateDebugMessenger() {
 	vkCheckResult(CreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger), "Create DebugMessenger");
 }
 
+void SVKApp::CreatePhysicalDevice() {
+	uint32_t physicalDeviceCount = 0;
+	vkEnumeratePhysicalDevices(m_instance, &physicalDeviceCount, nullptr);
+	if (physicalDeviceCount == 0)
+		throw std::runtime_error("Physical device with Vulkan support not found");
+	std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+	vkEnumeratePhysicalDevices(m_instance, &physicalDeviceCount, physicalDevices.data());
+
+	std::cerr << "physical devices: " << physicalDeviceCount << std::endl;
+	for (VkPhysicalDevice& physicalDevice : physicalDevices) {
+		VkPhysicalDeviceProperties physicalDeviceProperties;
+		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+		std::cerr << '\t' << physicalDeviceProperties.deviceName << std::endl;
+	}
+
+	std::optional<std::pair<int, VkPhysicalDevice>> physicalDeviceCandidate;
+	for (VkPhysicalDevice& physicalDevice : physicalDevices)
+		if (IsPhysicalDeviceSuitable(physicalDevice)) {
+			int score = GetPhysicalDeviceScore(physicalDevice);
+			if (!physicalDeviceCandidate.has_value() || physicalDeviceCandidate.value().first < score)
+				physicalDeviceCandidate = std::make_pair(score, physicalDevice);
+		}
+
+	if (!physicalDeviceCandidate.has_value())
+		throw std::runtime_error("No suitable physical device found");
+
+	m_physicalDevice = physicalDeviceCandidate.value().second;
+
+	VkPhysicalDeviceProperties physicalDeviceProperties;
+	vkGetPhysicalDeviceProperties(m_physicalDevice, &physicalDeviceProperties);
+	std::cerr << "selected: " << physicalDeviceProperties.deviceName << std::endl;
+}
+
+bool SVKApp::IsPhysicalDeviceSuitable(VkPhysicalDevice physicalDevice) {
+	VkPhysicalDeviceProperties physicalDeviceProperties;
+	VkPhysicalDeviceFeatures physicalDeviceFeatures;
+	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+	vkGetPhysicalDeviceFeatures(physicalDevice, &physicalDeviceFeatures);
+
+	QueueFamilyIndices queueFamilyIndices = FindQueueFamilyIndices(physicalDevice);
+
+	bool isSuitable = true;
+	isSuitable = isSuitable && physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+	isSuitable = isSuitable && physicalDeviceFeatures.geometryShader;
+	isSuitable = isSuitable && queueFamilyIndices.IsComplete();
+
+	return isSuitable;
+}
+
+int SVKApp::GetPhysicalDeviceScore(VkPhysicalDevice physicalDevice)
+{
+	VkPhysicalDeviceProperties physicalDeviceProperties;
+	VkPhysicalDeviceFeatures physicalDeviceFeatures;
+	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+	vkGetPhysicalDeviceFeatures(physicalDevice, &physicalDeviceFeatures);
+
+	int score = 0;
+
+	score += physicalDeviceProperties.limits.maxImageDimension2D;
+
+	return score;
+}
+
+SVKApp::QueueFamilyIndices SVKApp::FindQueueFamilyIndices(VkPhysicalDevice physicalDevice) {
+	uint32_t queueFamilyCount = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+	QueueFamilyIndices queueFamilyIndices;
+	for (uint32_t i = 0; i < queueFamilyCount; ++i) {
+		VkQueueFamilyProperties& queueFamily = queueFamilies[i];
+		if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			queueFamilyIndices.graphicsFamily = i;
+		if (queueFamilyIndices.IsComplete())
+			break;
+	}
+
+	return queueFamilyIndices;
+}
+
+
 void SVKApp::CleanupWindow() {
 	glfwDestroyWindow(m_window);
 	m_window = nullptr;
@@ -219,11 +302,11 @@ void SVKApp::CleanupWindow() {
 void SVKApp::CleanupVulkan() {
 	if (g_enableVkValidationLayers) {
 		DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
-		m_debugMessenger = 0;
+		m_debugMessenger = VK_NULL_HANDLE;
 	}
 
 	vkDestroyInstance(m_instance, nullptr);
-	m_instance = 0;
+	m_instance = VK_NULL_HANDLE;
 }
 
 bool SVKApp::DebugCallback(

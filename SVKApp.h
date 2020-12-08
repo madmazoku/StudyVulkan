@@ -4,6 +4,15 @@
 
 class SVKApp
 {
+protected:
+	struct QueueFamilyIndices {
+		std::optional<uint32_t> graphicsFamily;
+
+		bool IsComplete() {
+			return graphicsFamily.has_value();
+		}
+	};
+
 public:
 	static const int g_width;
 	static const int g_height;
@@ -36,7 +45,7 @@ public:
 	void Cleanup();
 	void Run();
 
-private:
+protected:
 	void InitializeWindow();
 	void InitializeVulkan();
 
@@ -47,6 +56,11 @@ private:
 
 	void FillDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void CreateDebugMessenger();
+
+	void CreatePhysicalDevice();
+	bool IsPhysicalDeviceSuitable(VkPhysicalDevice physicalDevice);
+	int GetPhysicalDeviceScore(VkPhysicalDevice physicalDevice);
+	QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physicalDevice);
 
 	void CleanupVulkan();
 	void CleanupWindow();
@@ -60,5 +74,7 @@ protected:
 	GLFWwindow* m_window;
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
+	VkPhysicalDevice m_physicalDevice;
+	QueueFamilyIndices m_queueFamilyIndices;
 };
 
