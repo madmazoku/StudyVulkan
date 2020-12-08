@@ -18,7 +18,7 @@ public:
 	static const int g_height;
 	static const char* const g_appName;
 	static const char* const g_engineName;
-	static const bool g_enableVkValidationLayers;
+	static const bool g_enableValidationLayers;
 	static const std::vector<const char*> g_validationLayers;
 
 private:
@@ -57,10 +57,12 @@ protected:
 	void FillDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void CreateDebugMessenger();
 
-	void CreatePhysicalDevice();
+	void PickPhysicalDevice();
 	bool IsPhysicalDeviceSuitable(VkPhysicalDevice physicalDevice);
 	int GetPhysicalDeviceScore(VkPhysicalDevice physicalDevice);
 	QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physicalDevice);
+
+	void CreateLogicalDevice();
 
 	void CleanupVulkan();
 	void CleanupWindow();
@@ -75,6 +77,7 @@ protected:
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
 	VkPhysicalDevice m_physicalDevice;
-	QueueFamilyIndices m_queueFamilyIndices;
+	VkDevice m_logicalDevice;
+	VkQueue m_graphicsQueue;
 };
 

@@ -9,9 +9,9 @@ const std::vector<const char*> SVKApp::g_validationLayers = {
 };
 
 #ifdef NDEBUG
-const bool SVKApp::g_enableVkValidationLayers = true;
+const bool SVKApp::g_enableValidationLayers = true;
 #else
-const bool SVKApp::g_enableVkValidationLayers = false;
+const bool SVKApp::g_enableValidationLayers = false;
 #endif // _DEBUG
 
 VkResult SVKApp::CreateDebugUtilsMessengerEXT(
@@ -46,7 +46,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL SVKApp::DebugCallback(
 	return static_cast<SVKApp*>(pUserData)->DebugCallback(messageSeverity, messageType, pCallbackData) ? VK_TRUE : VK_FALSE;
 }
 
-SVKApp::SVKApp() : m_window(nullptr), m_instance(VK_NULL_HANDLE), m_debugMessenger(VK_NULL_HANDLE)
+SVKApp::SVKApp() :
+	m_window(nullptr),
+	m_instance(VK_NULL_HANDLE),
+	m_debugMessenger(VK_NULL_HANDLE),
+	m_physicalDevice(VK_NULL_HANDLE),
+	m_logicalDevice(VK_NULL_HANDLE),
+	m_graphicsQueue(VK_NULL_HANDLE)
 {
 }
 
@@ -79,9 +85,10 @@ void SVKApp::InitializeWindow() {
 
 void SVKApp::InitializeVulkan() {
 	CreateInstance();
-	if (g_enableVkValidationLayers)
+	if (g_enableValidationLayers)
 		CreateDebugMessenger();
-	CreatePhysicalDevice();
+	PickPhysicalDevice();
+	CreateLogicalDevice();
 }
 
 void SVKApp::CreateInstance() {
@@ -105,7 +112,7 @@ void SVKApp::CreateInstance() {
 	createInfo.enabledLayerCount = 0;
 
 	VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-	if (g_enableVkValidationLayers) {
+	if (g_enableValidationLayers) {
 		CheckValidationLayerSupport(g_validationLayers);
 		createInfo.enabledLayerCount = static_cast<uint32_t>(g_validationLayers.size());
 		createInfo.ppEnabledLayerNames = g_validationLayers.data();
@@ -157,7 +164,7 @@ std::vector<const char*> SVKApp::GetRequiredExtensions() {
 
 	std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-	if (g_enableVkValidationLayers)
+	if (g_enableValidationLayers)
 		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
 	return extensions;
@@ -210,7 +217,7 @@ void SVKApp::CreateDebugMessenger() {
 	vkCheckResult(CreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger), "Create DebugMessenger");
 }
 
-void SVKApp::CreatePhysicalDevice() {
+void SVKApp::PickPhysicalDevice() {
 	uint32_t physicalDeviceCount = 0;
 	vkEnumeratePhysicalDevices(m_instance, &physicalDeviceCount, nullptr);
 	if (physicalDeviceCount == 0)
@@ -222,7 +229,12 @@ void SVKApp::CreatePhysicalDevice() {
 	for (VkPhysicalDevice& physicalDevice : physicalDevices) {
 		VkPhysicalDeviceProperties physicalDeviceProperties;
 		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
-		std::cerr << '\t' << physicalDeviceProperties.deviceName << std::endl;
+		std::cerr << '\t' << physicalDeviceProperties.deviceName << " (";
+		if (IsPhysicalDeviceSuitable(physicalDevice))
+			std::cerr << GetPhysicalDeviceScore(physicalDevice);
+		else
+			std::cerr << "not suitable";
+		std::cerr << ')' << std::endl;
 	}
 
 	std::optional<std::pair<int, VkPhysicalDevice>> physicalDeviceCandidate;
@@ -291,6 +303,35 @@ SVKApp::QueueFamilyIndices SVKApp::FindQueueFamilyIndices(VkPhysicalDevice physi
 	return queueFamilyIndices;
 }
 
+void SVKApp::CreateLogicalDevice() {
+	QueueFamilyIndices queueFamilyIndices = FindQueueFamilyIndices(m_physicalDevice);
+	float queuePriority = 1.0;
+
+	VkDeviceQueueCreateInfo queueCreateInfo{};
+	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queueCreateInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+	queueCreateInfo.queueCount = 1;
+	queueCreateInfo.pQueuePriorities = &queuePriority;
+
+	VkPhysicalDeviceFeatures physicalDeviceFeatures{};
+
+	VkDeviceCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	createInfo.pQueueCreateInfos = &queueCreateInfo;
+	createInfo.queueCreateInfoCount = 1;
+	createInfo.pEnabledFeatures = &physicalDeviceFeatures;
+
+	if (g_enableValidationLayers) {
+		createInfo.enabledLayerCount = static_cast<uint32_t>(g_validationLayers.size());
+		createInfo.ppEnabledLayerNames = g_validationLayers.data();
+	}
+	else
+		createInfo.enabledLayerCount = 0;
+
+	vkCheckResult(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_logicalDevice), "Create Device");
+
+	vkGetDeviceQueue(m_logicalDevice, queueFamilyIndices.graphicsFamily.value(), 0, &m_graphicsQueue);
+}
 
 void SVKApp::CleanupWindow() {
 	glfwDestroyWindow(m_window);
@@ -300,7 +341,10 @@ void SVKApp::CleanupWindow() {
 }
 
 void SVKApp::CleanupVulkan() {
-	if (g_enableVkValidationLayers) {
+	vkDestroyDevice(m_logicalDevice, nullptr);
+	m_logicalDevice = VK_NULL_HANDLE;
+
+	if (g_enableValidationLayers) {
 		DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
 		m_debugMessenger = VK_NULL_HANDLE;
 	}
