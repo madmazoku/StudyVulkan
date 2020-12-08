@@ -13,6 +13,10 @@
 
 #include <vector>
 
+#ifdef _DEBUG
+#define NDEBUG
+#endif // _DEBUG
+
 void vkCheckResultThrow(VkResult result, const char* const errMsg);
 const char* const vkResultName(VkResult result);
 

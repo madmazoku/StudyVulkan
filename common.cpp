@@ -15,7 +15,7 @@ void vkCheckResultThrow(VkResult result, const char* const errMsg) {
 	if (resultName)
 		ss << " (" << resultName << ")";
 
-	throw std::exception(errMsg);
+	throw std::runtime_error(ss.str());
 }
 
 const char* const vkResultName(VkResult result) {
