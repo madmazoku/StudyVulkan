@@ -1,13 +1,21 @@
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+#include "SVKApp.h"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
+int main() {
+    SVKApp app;
 
-#include <iostream>
+    try {
+        app.Initialize();
+        app.Run();
+        app.Cleanup();
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
 
+    return EXIT_SUCCESS;
+}
+
+/*
 int main() {
     glfwInit();
 
@@ -33,3 +41,4 @@ int main() {
 
     return 0;
 }
+*/
