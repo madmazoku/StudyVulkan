@@ -7,9 +7,10 @@ class SVKApp
 protected:
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
+		std::optional<uint32_t> presentFamily;
 
 		bool IsComplete() {
-			return graphicsFamily.has_value();
+			return graphicsFamily.has_value() && presentFamily.has_value();
 		}
 	};
 
@@ -57,6 +58,8 @@ protected:
 	void FillDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void CreateDebugMessenger();
 
+	void CreateSurface();
+
 	void PickPhysicalDevice();
 	bool IsPhysicalDeviceSuitable(VkPhysicalDevice physicalDevice);
 	int GetPhysicalDeviceScore(VkPhysicalDevice physicalDevice);
@@ -76,8 +79,10 @@ protected:
 	GLFWwindow* m_window;
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
+	VkSurfaceKHR m_windowSurface;
 	VkPhysicalDevice m_physicalDevice;
 	VkDevice m_logicalDevice;
 	VkQueue m_graphicsQueue;
+	VkQueue m_presentQueue;
 };
 
