@@ -14,6 +14,12 @@ protected:
 		}
 	};
 
+	struct SwapChainSupportDetails {
+		VkSurfaceCapabilitiesKHR capabilities;
+		std::vector<VkSurfaceFormatKHR> formats;
+		std::vector<VkPresentModeKHR> presentModes;
+	};
+
 public:
 	static const int g_width;
 	static const int g_height;
@@ -21,6 +27,7 @@ public:
 	static const char* const g_engineName;
 	static const bool g_enableValidationLayers;
 	static const std::vector<const char*> g_validationLayers;
+	static const std::vector<const char*> g_deviceExtensions;
 
 private:
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
@@ -61,9 +68,15 @@ protected:
 	void CreateSurface();
 
 	void PickPhysicalDevice();
+	bool IsPhysicalDeviceExtensionSupport(VkPhysicalDevice physicalDevice, const std::vector<const char*> extensions);
 	bool IsPhysicalDeviceSuitable(VkPhysicalDevice physicalDevice);
 	int GetPhysicalDeviceScore(VkPhysicalDevice physicalDevice);
 	QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physicalDevice);
+	SwapChainSupportDetails FindSwapChainSupportDetails(VkPhysicalDevice physicalDevice);
+
+	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
 	void CreateLogicalDevice();
 

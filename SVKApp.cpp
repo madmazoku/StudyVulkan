@@ -1,11 +1,27 @@
 #include "SVKApp.h"
 
+template<class T>
+std::string JoinStrings(T strings) {
+	std::stringstream ss;
+	auto it = strings.cbegin();
+	if (it != strings.cend()) {
+		ss << '\'' << *it;
+		while (++it != strings.cend())
+			ss << "', '" << *it;
+		ss << '\'';
+	}
+	return ss.str();
+}
+
 const int SVKApp::g_width = 1024;
 const int SVKApp::g_height = 512;
 const char* const SVKApp::g_appName = "Vulkan";
 const char* const SVKApp::g_engineName = "HelloWorld";
 const std::vector<const char*> SVKApp::g_validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
+};
+const std::vector<const char*> SVKApp::g_deviceExtensions = {
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 #ifdef NDEBUG
@@ -135,29 +151,24 @@ void SVKApp::CheckValidationLayerSupport(const std::vector<const char*> validati
 	for (const char* layerName : validationLayers)
 		std::cerr << '\t' << layerName << std::endl;
 
-	uint32_t vkLayerCount;
-	vkEnumerateInstanceLayerProperties(&vkLayerCount, nullptr);
-	std::vector<VkLayerProperties> vkLayers(vkLayerCount);
-	vkEnumerateInstanceLayerProperties(&vkLayerCount, vkLayers.data());
+	uint32_t vkAvaliableLayerCount;
+	vkEnumerateInstanceLayerProperties(&vkAvaliableLayerCount, nullptr);
+	std::vector<VkLayerProperties> vkAvaliableLayers(vkAvaliableLayerCount);
+	vkEnumerateInstanceLayerProperties(&vkAvaliableLayerCount, vkAvaliableLayers.data());
 
-	std::cerr << "Layers allowed: " << vkLayerCount << std::endl;
-	for (const VkLayerProperties& vkLayer : vkLayers)
-		std::cerr << '\t' << vkLayer.layerName << ": " << vkLayer.layerName << std::endl;
+	std::cerr << "Layers allowed: " << vkAvaliableLayerCount << std::endl;
+	for (const VkLayerProperties& vkAvaliableLayer : vkAvaliableLayers)
+		std::cerr << '\t' << vkAvaliableLayer.layerName << ": " << vkAvaliableLayer.layerName << std::endl;
 
 	// Check
-	for (const char* layerName : validationLayers) {
-		bool layerFound = false;
-		for (const VkLayerProperties& vkAvailableLayer : vkLayers)
-			if (strcmp(layerName, vkAvailableLayer.layerName) == 0) {
-				layerFound = true;
-				break;
-			}
+	std::set<std::string> requiredValidationLayers(validationLayers.begin(), validationLayers.end());
+	for (const VkLayerProperties& vkAvailableLayer : vkAvaliableLayers)
+		requiredValidationLayers.erase(vkAvailableLayer.layerName);
 
-		if (!layerFound) {
-			std::stringstream ss;
-			ss << "Required validation layer '" << layerName << "' not found";
-			throw std::runtime_error(ss.str());
-		}
+	if (!requiredValidationLayers.empty()) {
+		std::stringstream ss;
+		ss << "Required validation layers not found: " << JoinStrings(requiredValidationLayers);
+		throw std::runtime_error(ss.str());
 	}
 }
 
@@ -189,19 +200,14 @@ void SVKApp::CheckRequiredExtensionsSupport(const std::vector<const char*> exten
 		std::cerr << '\t' << vkAvailableExtension.extensionName << std::endl;
 
 	// Check
-	for (const char* extensionName : extensions) {
-		bool extensionFound = false;
-		for (const VkExtensionProperties& vkAvailableExtension : vkAvailableExtensions)
-			if (strcmp(extensionName, vkAvailableExtension.extensionName) == 0) {
-				extensionFound = true;
-				break;
-			}
+	std::set<std::string> requiredExtensions(extensions.begin(), extensions.end());
+	for (const VkExtensionProperties& vkAvailableExtension : vkAvailableExtensions)
+		requiredExtensions.erase(vkAvailableExtension.extensionName);
 
-		if (!extensionFound) {
-			std::stringstream ss;
-			ss << "Required extension '" << extensionName << "' not found";
-			throw std::runtime_error(ss.str());
-		}
+	if (!requiredExtensions.empty()) {
+		std::stringstream ss;
+		ss << "Required instance extensions not found: " << JoinStrings(requiredExtensions);
+		throw std::runtime_error(ss.str());
 	}
 }
 
@@ -262,20 +268,44 @@ void SVKApp::PickPhysicalDevice() {
 	std::cerr << "selected: " << physicalDeviceProperties.deviceName << std::endl;
 }
 
+bool SVKApp::IsPhysicalDeviceExtensionSupport(VkPhysicalDevice physicalDevice, const std::vector<const char*> extensions) {
+	uint32_t vkAvailableExtensionCount;
+	vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &vkAvailableExtensionCount, nullptr);
+	std::vector<VkExtensionProperties> vkAvailableExtensions(vkAvailableExtensionCount);
+	vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &vkAvailableExtensionCount, vkAvailableExtensions.data());
+
+	std::set<std::string> requiredExtensions(extensions.begin(), extensions.end());
+	for (const VkExtensionProperties& vkAvailableExtension : vkAvailableExtensions)
+		requiredExtensions.erase(vkAvailableExtension.extensionName);
+
+	return requiredExtensions.empty();
+}
+
 bool SVKApp::IsPhysicalDeviceSuitable(VkPhysicalDevice physicalDevice) {
 	VkPhysicalDeviceProperties physicalDeviceProperties;
-	VkPhysicalDeviceFeatures physicalDeviceFeatures;
 	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+	if (physicalDeviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		return false;
+
+	VkPhysicalDeviceFeatures physicalDeviceFeatures;
 	vkGetPhysicalDeviceFeatures(physicalDevice, &physicalDeviceFeatures);
+	if (!physicalDeviceFeatures.geometryShader)
+		return false;
 
 	QueueFamilyIndices queueFamilyIndices = FindQueueFamilyIndices(physicalDevice);
+	if (!queueFamilyIndices.IsComplete())
+		return false;
 
-	bool isSuitable = true;
-	isSuitable = isSuitable && physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-	isSuitable = isSuitable && physicalDeviceFeatures.geometryShader;
-	isSuitable = isSuitable && queueFamilyIndices.IsComplete();
+	if (!IsPhysicalDeviceExtensionSupport(physicalDevice, g_deviceExtensions))
+		return false;
 
-	return isSuitable;
+	SwapChainSupportDetails swapChainSupportDetails = FindSwapChainSupportDetails(physicalDevice);
+	if (swapChainSupportDetails.formats.empty())
+		return false;
+	if (swapChainSupportDetails.presentModes.empty())
+		return false;
+
+	return true;
 }
 
 int SVKApp::GetPhysicalDeviceScore(VkPhysicalDevice physicalDevice)
@@ -316,6 +346,61 @@ SVKApp::QueueFamilyIndices SVKApp::FindQueueFamilyIndices(VkPhysicalDevice physi
 	return queueFamilyIndices;
 }
 
+SVKApp::SwapChainSupportDetails SVKApp::FindSwapChainSupportDetails(VkPhysicalDevice physicalDevice) {
+	SwapChainSupportDetails swapChainSupportDetails{};
+	
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, m_windowSurface, &swapChainSupportDetails.capabilities);
+
+	uint32_t vkAvailableFormatCount;
+	vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, m_windowSurface, &vkAvailableFormatCount, nullptr);
+	if (vkAvailableFormatCount != 0) {
+		swapChainSupportDetails.formats.resize(vkAvailableFormatCount);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, m_windowSurface, &vkAvailableFormatCount, swapChainSupportDetails.formats.data());
+	}
+
+	uint32_t vkAvailablePresentModeCount;
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, m_windowSurface, &vkAvailablePresentModeCount, nullptr);
+	if (vkAvailablePresentModeCount != 0) {
+		swapChainSupportDetails.presentModes.resize(vkAvailablePresentModeCount);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, m_windowSurface, &vkAvailablePresentModeCount, swapChainSupportDetails.presentModes.data());
+	}
+
+	return swapChainSupportDetails;
+}
+
+VkSurfaceFormatKHR SVKApp::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+	for (const VkSurfaceFormatKHR& availableFormat : availableFormats)
+		if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+			return availableFormat;
+	return availableFormats[0];
+}
+
+VkPresentModeKHR SVKApp::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+	for (const auto& availablePresentMode : availablePresentModes)
+		if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+			return availablePresentMode;
+
+	return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkExtent2D SVKApp::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+	if (capabilities.currentExtent.width != UINT32_MAX)
+		return capabilities.currentExtent;
+
+	int width, height;
+	glfwGetFramebufferSize(m_window, &width, &height);
+
+	VkExtent2D actualExtent = {
+		static_cast<uint32_t>(width),
+		static_cast<uint32_t>(height)
+	};
+
+	actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
+	actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+
+	return actualExtent;
+}
+
 void SVKApp::CreateLogicalDevice() {
 	QueueFamilyIndices queueFamilyIndices = FindQueueFamilyIndices(m_physicalDevice);
 	std::set<uint32_t> uniqueQueueFamilies = { queueFamilyIndices.graphicsFamily.value(), queueFamilyIndices.presentFamily.value() };
@@ -338,6 +423,9 @@ void SVKApp::CreateLogicalDevice() {
 	createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
 	createInfo.pQueueCreateInfos = queueCreateInfos.data();
 	createInfo.pEnabledFeatures = &physicalDeviceFeatures;
+
+	createInfo.enabledExtensionCount = static_cast<uint32_t>(g_deviceExtensions.size());
+	createInfo.ppEnabledExtensionNames = g_deviceExtensions.data();
 
 	if (g_enableValidationLayers) {
 		createInfo.enabledLayerCount = static_cast<uint32_t>(g_validationLayers.size());
