@@ -30,6 +30,12 @@ protected:
 		static std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescriptions();
 	};
 
+	struct UniformBufferObject {
+		glm::mat4 model;
+		glm::mat4 view;
+		glm::mat4 proj;
+	};
+
 public:
 	static const int g_width;
 	static const int g_height;
@@ -97,8 +103,8 @@ protected:
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
 	void CreateImageViews();
-
 	void CreateRenderPass();
+	void CreateDescriptorSetLayout();
 
 	void CreateGraphicsPipeline();
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
@@ -108,6 +114,7 @@ protected:
 	
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
+	void CreateUniformBuffers();
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -120,7 +127,9 @@ protected:
 
 	void CleanupSwapChain();
 	void RecreateSwapChain();
+
 	void DrawFrame();
+	void UpdateUniformBuffer(uint32_t currentImage);
 
 	bool OnDebug(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -146,6 +155,7 @@ protected:
 	VkExtent2D m_swapChainExtent;
 	std::vector<VkImageView> m_swapChainImageViews;
 	VkRenderPass m_renderPass;
+	VkDescriptorSetLayout m_descriptorSetLayout;
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapChainFrameBuffers;
@@ -154,6 +164,8 @@ protected:
 	VkDeviceMemory m_vertexBufferMemory;
 	VkBuffer m_indexBuffer;
 	VkDeviceMemory m_indexBufferMemory;
+	std::vector<VkBuffer> m_uniformBuffers;
+	std::vector<VkDeviceMemory> m_uniformBuffersMemory;
 	std::vector<VkCommandBuffer> m_commandBuffers;
 	std::vector<VkSemaphore> m_imageAvailableSemaphores;
 	std::vector<VkSemaphore> m_renderFinishedSemaphores;

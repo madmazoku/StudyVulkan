@@ -144,6 +144,7 @@ SVKApp::SVKApp(const SVKConfig& config) :
 	m_swapChainImageFormat(VK_FORMAT_UNDEFINED),
 	m_swapChainExtent{ 0, 0 },
 	m_renderPass(VK_NULL_HANDLE),
+	m_descriptorSetLayout(VK_NULL_HANDLE),
 	m_pipelineLayout(VK_NULL_HANDLE),
 	m_graphicsPipeline(VK_NULL_HANDLE),
 	m_commandPool(VK_NULL_HANDLE),
@@ -180,7 +181,7 @@ void SVKApp::Run() {
 			++frameCount;
 			DrawFrame();
 		}
-		catch (VkException& e) {
+		catch (const VkException& e) {
 			if (e.result() == VK_ERROR_OUT_OF_DATE_KHR || e.result() == VK_SUBOPTIMAL_KHR)
 				RecreateSwapChain();
 			else
@@ -222,11 +223,13 @@ void SVKApp::InitializeVulkan() {
 	CreateSwapChain();
 	CreateImageViews();
 	CreateRenderPass();
+	CreateDescriptorSetLayout();
 	CreateGraphicsPipeline();
 	CreateFrameBuffers();
 	CreateCommandPool();
 	CreateVertexBuffer();
 	CreateIndexBuffer();
+	CreateUniformBuffers();
 	CreateCommandBuffers();
 	CreateSyncObjects();
 }
@@ -672,6 +675,22 @@ void SVKApp::CreateRenderPass() {
 	vkCheckResult(vkCreateRenderPass(m_logicalDevice, &renderPassInfo, nullptr, &m_renderPass), "Create RenderPass");
 }
 
+void SVKApp::CreateDescriptorSetLayout() {
+	VkDescriptorSetLayoutBinding uboLayoutBinding{};
+	uboLayoutBinding.binding = 0;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &uboLayoutBinding;
+
+	vkCheckResult(vkCreateDescriptorSetLayout(m_logicalDevice, &layoutInfo, nullptr, &m_descriptorSetLayout), "Create DescriptorSetLayout");
+}
+
 void SVKApp::CreateGraphicsPipeline() {
 	std::vector<char> shaderVert = ReadFile((m_config.m_appDir / "shader.vert.spv").string());
 	std::vector<char> shaderFrag = ReadFile((m_config.m_appDir / "./shader.frag.spv").string());
@@ -772,8 +791,8 @@ void SVKApp::CreateGraphicsPipeline() {
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0; // Optional
-	pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
+	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
 	pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
 	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
@@ -817,7 +836,7 @@ VkShaderModule SVKApp::CreateShaderModule(const std::vector<char>& code) {
 void SVKApp::CreateFrameBuffers() {
 	m_swapChainFrameBuffers.resize(m_swapChainImageViews.size());
 
-	for (size_t i = 0; i < m_swapChainImageViews.size(); i++) {
+	for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
 		VkImageView attachments[] = { m_swapChainImageViews[i] };
 
 		VkFramebufferCreateInfo framebufferInfo{};
@@ -882,6 +901,16 @@ void SVKApp::CreateIndexBuffer() {
 
 	vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
 	vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
+}
+
+void SVKApp::CreateUniformBuffers() {
+	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+	m_uniformBuffers.resize(m_swapChainImages.size());
+	m_uniformBuffersMemory.resize(m_swapChainImages.size());
+
+	for (size_t i = 0; i < m_swapChainImages.size(); ++i)
+		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
 }
 
 void SVKApp::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
@@ -962,7 +991,7 @@ void SVKApp::CreateCommandBuffers() {
 
 	vkCheckResult(vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_commandBuffers.data()), "Allocate CommandBuffers");
 
-	for (size_t i = 0; i < m_commandBuffers.size(); i++) {
+	for (size_t i = 0; i < m_commandBuffers.size(); ++i) {
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = 0; // Optional
@@ -1025,6 +1054,9 @@ void SVKApp::CleanupWindow() {
 void SVKApp::CleanupVulkan() {
 	CleanupSwapChain();
 
+	vkDestroyDescriptorSetLayout(m_logicalDevice, m_descriptorSetLayout, nullptr);
+	m_descriptorSetLayout = VK_NULL_HANDLE;
+
 	m_currentFrame = 0;
 	m_imagesInFlight.clear();
 	for (int i = 0; i < g_maxFramesInFlight; ++i) {
@@ -1072,6 +1104,13 @@ void SVKApp::CleanupSwapChain() {
 		vkDestroyFramebuffer(m_logicalDevice, frameBuffer, nullptr);
 	m_swapChainFrameBuffers.clear();
 
+	for (size_t i = 0; i < m_swapChainImages.size(); ++i) {
+		vkDestroyBuffer(m_logicalDevice, m_uniformBuffers[i], nullptr);
+		vkFreeMemory(m_logicalDevice, m_uniformBuffersMemory[i], nullptr);
+	}
+	m_uniformBuffers.clear();
+	m_uniformBuffersMemory.clear();
+
 	vkFreeCommandBuffers(m_logicalDevice, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
 
 	vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
@@ -1114,6 +1153,7 @@ void SVKApp::RecreateSwapChain() {
 	CreateRenderPass();
 	CreateGraphicsPipeline();
 	CreateFrameBuffers();
+	CreateUniformBuffers();
 	CreateCommandBuffers();
 }
 
@@ -1126,6 +1166,8 @@ void SVKApp::DrawFrame() {
 	if (m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
 		vkCheckResult(vkWaitForFences(m_logicalDevice, 1, &m_imagesInFlight[m_currentFrame], VK_TRUE, UINT64_MAX), "InFlight Fence Wait");
 	m_imagesInFlight[imageIndex] = m_inFlightFences[m_currentFrame];
+
+	UpdateUniformBuffer(imageIndex);
 
 	VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
@@ -1160,6 +1202,23 @@ void SVKApp::DrawFrame() {
 	vkCheckResult(vkQueueWaitIdle(m_presentQueue), "Queue Present Wait");
 
 	m_currentFrame = (m_currentFrame + 1) % g_maxFramesInFlight;
+}
+
+void SVKApp::UpdateUniformBuffer(uint32_t currentImage) {
+	static auto startTime = std::chrono::high_resolution_clock::now();
+	auto currentTime = std::chrono::high_resolution_clock::now();
+	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+	UniformBufferObject ubo{};
+	ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.proj = glm::perspective(glm::radians(45.0f), m_swapChainExtent.width / (float)m_swapChainExtent.height, 0.1f, 10.0f);
+	ubo.proj[1][1] *= -1;
+
+	void* data;
+	vkMapMemory(m_logicalDevice, m_uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
+	memcpy(data, &ubo, sizeof(ubo));
+	vkUnmapMemory(m_logicalDevice, m_uniformBuffersMemory[currentImage]);
 }
 
 bool SVKApp::OnDebug(
