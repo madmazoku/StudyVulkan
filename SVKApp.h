@@ -90,6 +90,8 @@ protected:
 	void CreateGraphicsPipeline();
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
+	void CreateFrameBuffers();
+
 	void CleanupVulkan();
 	void CleanupWindow();
 
@@ -117,5 +119,6 @@ protected:
 	VkRenderPass m_renderPass;
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
+	std::vector<VkFramebuffer> m_swapChainFrameBuffers;
 };
 

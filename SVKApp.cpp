@@ -139,6 +139,7 @@ void SVKApp::InitializeVulkan() {
 	CreateImageViews();
 	CreateRenderPass();
 	CreateGraphicsPipeline();
+	CreateFrameBuffers();
 }
 
 void SVKApp::CreateInstance() {
@@ -715,6 +716,25 @@ VkShaderModule SVKApp::CreateShaderModule(const std::vector<char>& code) {
 	return shaderModule;
 }
 
+void SVKApp::CreateFrameBuffers() {
+	m_swapChainFrameBuffers.resize(m_swapChainImageViews.size());
+
+	for (size_t i = 0; i < m_swapChainImageViews.size(); i++) {
+		VkImageView attachments[] = { m_swapChainImageViews[i] };
+
+		VkFramebufferCreateInfo framebufferInfo{};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = m_renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.width = m_swapChainExtent.width;
+		framebufferInfo.height = m_swapChainExtent.height;
+		framebufferInfo.layers = 1;
+
+		vkCheckResult(vkCreateFramebuffer(m_logicalDevice, &framebufferInfo, nullptr, &m_swapChainFrameBuffers[i]), "Create SwapChain FrameBuffer");
+	}
+}
+
 void SVKApp::CleanupWindow() {
 	glfwDestroyWindow(m_window);
 	m_window = nullptr;
@@ -723,6 +743,10 @@ void SVKApp::CleanupWindow() {
 }
 
 void SVKApp::CleanupVulkan() {
+	for (const VkFramebuffer& frameBuffer : m_swapChainFrameBuffers)
+		vkDestroyFramebuffer(m_logicalDevice, frameBuffer, nullptr);
+	m_swapChainFrameBuffers.clear();
+
 	vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
 	m_graphicsPipeline = VK_NULL_HANDLE;
 
