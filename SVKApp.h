@@ -85,6 +85,8 @@ protected:
 
 	void CreateImageViews();
 	
+	void CreateRenderPass();
+
 	void CreateGraphicsPipeline();
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
@@ -112,6 +114,7 @@ protected:
 	VkFormat m_swapChainImageFormat;
 	VkExtent2D m_swapChainExtent;
 	std::vector<VkImageView> m_swapChainImageViews;
+	VkRenderPass m_renderPass;
 	VkPipelineLayout m_pipelineLayout;
 
 };

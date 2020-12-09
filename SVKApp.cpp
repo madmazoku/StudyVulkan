@@ -95,6 +95,7 @@ SVKApp::SVKApp(const SVKConfig &config) :
 	m_swapChain(VK_NULL_HANDLE),
 	m_swapChainImageFormat(VK_FORMAT_UNDEFINED),
 	m_swapChainExtent{ 0, 0 },
+	m_renderPass(VK_NULL_HANDLE),
 	m_pipelineLayout(VK_NULL_HANDLE)
 {
 }
@@ -135,6 +136,7 @@ void SVKApp::InitializeVulkan() {
 	CreateLogicalDevice();
 	CreateSwapChain();
 	CreateImageViews();
+	CreateRenderPass();
 	CreateGraphicsPipeline();
 }
 
@@ -539,6 +541,36 @@ void SVKApp::CreateImageViews() {
 	}
 }
 
+void SVKApp::CreateRenderPass() {
+	VkAttachmentDescription colorAttachment{};
+	colorAttachment.format = m_swapChainImageFormat;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentReference colorAttachmentRef{};
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass{};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+
+	VkRenderPassCreateInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = 1;
+	renderPassInfo.pAttachments = &colorAttachment;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+
+	vkCheckResult(vkCreateRenderPass(m_logicalDevice, &renderPassInfo, nullptr, &m_renderPass), "Create RenderPass");
+}
+
 void SVKApp::CreateGraphicsPipeline() {
 	std::vector<char> shaderVert = ReadFile((m_config.m_appDir / "shader.vert.spv").string());
 	std::vector<char> shaderFrag= ReadFile((m_config.m_appDir / "./shader.frag.spv").string());
@@ -561,6 +593,7 @@ void SVKApp::CreateGraphicsPipeline() {
 	VkPipelineShaderStageCreateInfo shaderStages[] = { shaderVertStageInfo, shaderFragStageInfo };
 
 	// Start Fixed Stages
+
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	vertexInputInfo.vertexBindingDescriptionCount = 0;
@@ -671,6 +704,9 @@ void SVKApp::CleanupWindow() {
 void SVKApp::CleanupVulkan() {
 	vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
 	m_pipelineLayout = VK_NULL_HANDLE;
+
+	vkDestroyRenderPass(m_logicalDevice, m_renderPass, nullptr);
+	m_renderPass = VK_NULL_HANDLE;
 
 	for (const VkImageView& view : m_swapChainImageViews)
 		vkDestroyImageView(m_logicalDevice, view, nullptr);
