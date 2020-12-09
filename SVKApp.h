@@ -77,10 +77,11 @@ protected:
 	void CreateLogicalDevice();
 
 	void CreateSwapChain();
-
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+
+	void CreateImageViews();
 
 	void CleanupVulkan();
 	void CleanupWindow();
@@ -103,5 +104,6 @@ protected:
 	std::vector<VkImage> m_swapChainImages;
 	VkFormat m_swapChainImageFormat;
 	VkExtent2D m_swapChainExtent;
+	std::vector<VkImageView> m_swapChainImageViews;
 };
 
