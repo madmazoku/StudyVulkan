@@ -15,7 +15,7 @@
     </Filter>
     <Filter Include="Shader Files">
       <UniqueIdentifier>{c3765d4b-8e3a-440d-a321-8f2300cd5c23}</UniqueIdentifier>
-      <Extensions>vert;tesc;tese;geom;frag;comp</Extensions>
+      <Extensions>glsl;frag;vert;geom;comp;tese;tesc;mesh;task;rgen;rint;rmiss;rahit;rchit;rcall</Extensions>
     </Filter>
   </ItemGroup>
   <ItemGroup>
