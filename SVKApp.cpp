@@ -81,7 +81,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL SVKApp::DebugCallback(
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData) {
 
-	return static_cast<SVKApp*>(pUserData)->DebugCallback(messageSeverity, messageType, pCallbackData) ? VK_TRUE : VK_FALSE;
+	return reinterpret_cast<SVKApp*>(pUserData)->OnDebug(messageSeverity, messageType, pCallbackData) ? VK_TRUE : VK_FALSE;
+}
+
+void SVKApp::ResizeCallback(GLFWwindow* window, int width, int height) {
+	reinterpret_cast<SVKApp*>(glfwGetWindowUserPointer(window))->OnResize(width, height);
 }
 
 SVKApp::SVKApp(const SVKConfig& config) :
@@ -101,7 +105,8 @@ SVKApp::SVKApp(const SVKConfig& config) :
 	m_pipelineLayout(VK_NULL_HANDLE),
 	m_graphicsPipeline(VK_NULL_HANDLE),
 	m_commandPool(VK_NULL_HANDLE),
-	m_currentFrame(0)
+	m_currentFrame(0),
+	m_framebufferResized(false)
 {
 }
 
@@ -118,7 +123,19 @@ void SVKApp::Cleanup() {
 void SVKApp::Run() {
 	while (!glfwWindowShouldClose(m_window)) {
 		glfwPollEvents();
-		DrawFrame();
+		if (m_framebufferResized) {
+			RecreateSwapChain();
+			m_framebufferResized = false;
+		}
+		try {
+			DrawFrame();
+		}
+		catch (VkException& e) {
+			if (e.result() == VK_ERROR_OUT_OF_DATE_KHR || e.result() == VK_SUBOPTIMAL_KHR)
+				RecreateSwapChain();
+			else
+				throw;
+		}
 	}
 	vkDeviceWaitIdle(m_logicalDevice);
 }
@@ -127,9 +144,10 @@ void SVKApp::InitializeWindow() {
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	m_window = glfwCreateWindow(g_width, g_height, g_appName, nullptr, nullptr);
+	glfwSetWindowUserPointer(m_window, this);
+	glfwSetFramebufferSizeCallback(m_window, ResizeCallback);
 
 	glfwSetWindowPos(m_window, 1024, 100);
 }
@@ -832,6 +850,8 @@ void SVKApp::CleanupWindow() {
 }
 
 void SVKApp::CleanupVulkan() {
+	CleanupSwapChain();
+
 	m_currentFrame = 0;
 	m_imagesInFlight.clear();
 	for (int i = 0; i < g_maxFramesInFlight; ++i) {
@@ -845,29 +865,6 @@ void SVKApp::CleanupVulkan() {
 
 	vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
 	m_commandPool = VK_NULL_HANDLE;
-
-	for (const VkFramebuffer& frameBuffer : m_swapChainFrameBuffers)
-		vkDestroyFramebuffer(m_logicalDevice, frameBuffer, nullptr);
-	m_swapChainFrameBuffers.clear();
-
-	vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
-	m_graphicsPipeline = VK_NULL_HANDLE;
-
-	vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
-	m_pipelineLayout = VK_NULL_HANDLE;
-
-	vkDestroyRenderPass(m_logicalDevice, m_renderPass, nullptr);
-	m_renderPass = VK_NULL_HANDLE;
-
-	for (const VkImageView& view : m_swapChainImageViews)
-		vkDestroyImageView(m_logicalDevice, view, nullptr);
-	m_swapChainImageViews.clear();
-
-	m_swapChainExtent = { 0, 0 };
-	m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
-	m_swapChainImages.clear();
-	vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, nullptr);
-	m_swapChain = VK_NULL_HANDLE;
 
 	m_presentQueue = VK_NULL_HANDLE;
 	m_graphicsQueue = VK_NULL_HANDLE;
@@ -887,11 +884,62 @@ void SVKApp::CleanupVulkan() {
 	m_instance = VK_NULL_HANDLE;
 }
 
+void SVKApp::CleanupSwapChain() {
+	for (const VkFramebuffer& frameBuffer : m_swapChainFrameBuffers)
+		vkDestroyFramebuffer(m_logicalDevice, frameBuffer, nullptr);
+	m_swapChainFrameBuffers.clear();
+
+	vkFreeCommandBuffers(m_logicalDevice, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
+
+	vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
+	m_graphicsPipeline = VK_NULL_HANDLE;
+
+	vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
+	m_pipelineLayout = VK_NULL_HANDLE;
+
+	vkDestroyRenderPass(m_logicalDevice, m_renderPass, nullptr);
+	m_renderPass = VK_NULL_HANDLE;
+
+	for (const VkImageView& view : m_swapChainImageViews)
+		vkDestroyImageView(m_logicalDevice, view, nullptr);
+	m_swapChainImageViews.clear();
+
+	m_swapChainExtent = { 0, 0 };
+	m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
+	m_swapChainImages.clear();
+	vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, nullptr);
+	m_swapChain = VK_NULL_HANDLE;
+}
+
+void SVKApp::RecreateSwapChain() {
+	int width = 0, height = 0;
+	glfwGetFramebufferSize(m_window, &width, &height);
+	while (width == 0 || height == 0) {
+		std::cerr << "Window Minimized" << std::endl;
+		glfwGetFramebufferSize(m_window, &width, &height);
+		glfwWaitEvents();
+	}
+
+	vkDeviceWaitIdle(m_logicalDevice);
+
+	std::cerr << "RecreateSwapChain" << std::endl;
+
+	CleanupSwapChain();
+
+	CreateSwapChain();
+	CreateImageViews();
+	CreateRenderPass();
+	CreateGraphicsPipeline();
+	CreateFrameBuffers();
+	CreateCommandBuffers();
+}
+
 void SVKApp::DrawFrame() {
 	vkCheckResult(vkWaitForFences(m_logicalDevice, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX), "InFlight Fence Wait");
 
 	uint32_t imageIndex;
 	vkCheckResult(vkAcquireNextImageKHR(m_logicalDevice, m_swapChain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex), "Acquire Next Image");
+
 	if (m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
 		vkCheckResult(vkWaitForFences(m_logicalDevice, 1, &m_imagesInFlight[m_currentFrame], VK_TRUE, UINT64_MAX), "InFlight Fence Wait");
 	m_imagesInFlight[imageIndex] = m_inFlightFences[m_currentFrame];
@@ -931,7 +979,7 @@ void SVKApp::DrawFrame() {
 	m_currentFrame = (m_currentFrame + 1) % g_maxFramesInFlight;
 }
 
-bool SVKApp::DebugCallback(
+bool SVKApp::OnDebug(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
@@ -940,4 +988,9 @@ bool SVKApp::DebugCallback(
 		std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
 
 	return false;
+}
+
+void SVKApp::OnResize(int width, int height)
+{
+	m_framebufferResized = true;
 }

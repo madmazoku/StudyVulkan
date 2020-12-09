@@ -49,6 +49,8 @@ private:
 		VkDebugUtilsMessengerEXT debugMessenger,
 		const VkAllocationCallbacks* pAllocator);
 
+	static void ResizeCallback(GLFWwindow* window, int width, int height);
+
 public:
 	SVKApp(const SVKConfig& config);
 
@@ -99,12 +101,16 @@ protected:
 	void CleanupVulkan();
 	void CleanupWindow();
 
+	void CleanupSwapChain();
+	void RecreateSwapChain();
 	void DrawFrame();
 
-	bool DebugCallback(
+	bool OnDebug(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+
+	void OnResize(int width, int height);
 
 protected:
 	const SVKConfig& m_config;
@@ -133,5 +139,6 @@ protected:
 	std::vector<VkFence> m_inFlightFences;
 	std::vector<VkFence> m_imagesInFlight;
 	size_t m_currentFrame;
+	bool m_framebufferResized;
 };
 

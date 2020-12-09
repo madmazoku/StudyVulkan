@@ -23,10 +23,9 @@
 #define NDEBUG
 #endif // _DEBUG
 
-void vkCheckResultThrow(VkResult result, const char* const errMsg);
-const char* const vkResultName(VkResult result);
+#include "VkException.h"
 
-inline void vkCheckResult(VkResult result, const char* const errMsg) {
+inline void vkCheckResult(VkResult result, const char* errMsg) {
 	if (result != VK_SUCCESS)
-		vkCheckResultThrow(result, errMsg);
+		throw VkException(result, errMsg);
 }

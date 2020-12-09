@@ -31,6 +31,9 @@
     <ClCompile Include="SVKConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="VkException.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="SVKApp.h">
@@ -42,23 +45,18 @@
     <ClInclude Include="SVKConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="VkException.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shader.vert">
       <Filter>Shader Files</Filter>
     </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="shader.frag">
+    <CustomBuild Include="shader.frag">
       <Filter>Shader Files</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="VertexShader.hlsl">
-      <Filter>Shader Files</Filter>
-    </FxCompile>
-    <FxCompile Include="shader.frag.hlsl">
-      <Filter>Shader Files</Filter>
-    </FxCompile>
+    </CustomBuild>
+    <CustomBuild Include="shader.vert.hlsl" />
+    <CustomBuild Include="shader.frag.hlsl" />
   </ItemGroup>
 </Project>
