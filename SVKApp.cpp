@@ -33,8 +33,10 @@ static std::vector<char> ReadFile(const std::string& filename) {
 	return buffer;
 }
 
+// *********************************************************************************
+
 const int SVKApp::g_width = 1024;
-const int SVKApp::g_height = 512;
+const int SVKApp::g_height = 1024;
 const char* const SVKApp::g_appName = "Vulkan";
 const char* const SVKApp::g_engineName = "HelloWorld";
 const std::vector<const char*> SVKApp::g_validationLayers = {
@@ -51,6 +53,14 @@ const bool SVKApp::g_enableValidationLayers = false;
 #endif // _DEBUG
 
 const int SVKApp::g_maxFramesInFlight = 2;
+
+const std::vector<SVKApp::Vertex> SVKApp::g_vertices = {
+	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
+// *********************************************************************************
 
 VkResult SVKApp::CreateDebugUtilsMessengerEXT(
 	VkInstance instance,
@@ -113,6 +123,8 @@ std::array<VkVertexInputAttributeDescription, 2> SVKApp::Vertex::GetAttributeDes
 	return attributeDescriptions;
 }
 
+// *********************************************************************************
+
 SVKApp::SVKApp(const SVKConfig& config) :
 	m_config(config),
 	m_window(nullptr),
@@ -130,6 +142,8 @@ SVKApp::SVKApp(const SVKConfig& config) :
 	m_pipelineLayout(VK_NULL_HANDLE),
 	m_graphicsPipeline(VK_NULL_HANDLE),
 	m_commandPool(VK_NULL_HANDLE),
+	m_vertexBuffer(VK_NULL_HANDLE),
+	m_vertexBufferMemory(VK_NULL_HANDLE),
 	m_currentFrame(0),
 	m_framebufferResized(false)
 {
@@ -190,6 +204,7 @@ void SVKApp::InitializeVulkan() {
 	CreateGraphicsPipeline();
 	CreateFrameBuffers();
 	CreateCommandPool();
+	CreateVertexBuffer();
 	CreateCommandBuffers();
 	CreateSyncObjects();
 }
@@ -807,6 +822,44 @@ void SVKApp::CreateCommandPool() {
 	vkCheckResult(vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool), "Create CommandPool");
 }
 
+void SVKApp::CreateVertexBuffer() {
+	VkBufferCreateInfo bufferInfo{};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = sizeof(g_vertices[0]) * g_vertices.size();
+	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	vkCheckResult(vkCreateBuffer(m_logicalDevice, &bufferInfo, nullptr, &m_vertexBuffer), "Create Vertex Buffer");
+
+	VkMemoryRequirements memRequirements;
+	vkGetBufferMemoryRequirements(m_logicalDevice, m_vertexBuffer, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	vkCheckResult(vkAllocateMemory(m_logicalDevice, &allocInfo, nullptr, &m_vertexBufferMemory), "Allocate VertexBuffer Memory");
+	vkBindBufferMemory(m_logicalDevice, m_vertexBuffer, m_vertexBufferMemory, 0);
+
+	void* data;
+	vkMapMemory(m_logicalDevice, m_vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+	memcpy(data, g_vertices.data(), static_cast<size_t>(bufferInfo.size));
+	vkUnmapMemory(m_logicalDevice, m_vertexBufferMemory);
+
+}
+
+uint32_t SVKApp::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
+
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+			return i;
+
+	throw std::runtime_error("No suitable memory type found");
+}
+
 void SVKApp::CreateCommandBuffers() {
 	m_commandBuffers.resize(m_swapChainFrameBuffers.size());
 
@@ -837,8 +890,12 @@ void SVKApp::CreateCommandBuffers() {
 		renderPassInfo.clearValueCount = 1;
 		renderPassInfo.pClearValues = &clearColor;
 
+		VkBuffer vertexBuffers[] = { m_vertexBuffer };
+		VkDeviceSize offsets[] = { 0 };
+
 		vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+		vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1, vertexBuffers, offsets);
 		vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0);
 		vkCmdEndRenderPass(m_commandBuffers[i]);
 
@@ -886,6 +943,11 @@ void SVKApp::CleanupVulkan() {
 	m_inFlightFences.clear();
 	m_renderFinishedSemaphores.clear();
 	m_imageAvailableSemaphores.clear();
+
+	vkDestroyBuffer(m_logicalDevice, m_vertexBuffer, nullptr);
+	m_vertexBuffer = VK_NULL_HANDLE;
+	vkFreeMemory(m_logicalDevice, m_vertexBufferMemory, nullptr);
+	m_vertexBufferMemory = VK_NULL_HANDLE;
 
 	vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
 	m_commandPool = VK_NULL_HANDLE;

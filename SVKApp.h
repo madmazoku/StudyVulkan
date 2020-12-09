@@ -39,6 +39,7 @@ public:
 	static const std::vector<const char*> g_validationLayers;
 	static const std::vector<const char*> g_deviceExtensions;
 	static const int g_maxFramesInFlight;
+	static const std::vector<SVKApp::Vertex> g_vertices;
 
 private:
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
@@ -103,6 +104,10 @@ protected:
 
 	void CreateFrameBuffers();
 	void CreateCommandPool();
+	
+	void CreateVertexBuffer();
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
 	void CreateCommandBuffers();
 	void CreateSyncObjects();
 
@@ -141,6 +146,8 @@ protected:
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapChainFrameBuffers;
 	VkCommandPool m_commandPool;
+	VkBuffer m_vertexBuffer;
+	VkDeviceMemory m_vertexBufferMemory;
 	std::vector<VkCommandBuffer> m_commandBuffers;
 	std::vector<VkSemaphore> m_imageAvailableSemaphores;
 	std::vector<VkSemaphore> m_renderFinishedSemaphores;
