@@ -30,6 +30,7 @@ public:
 	static const bool g_enableValidationLayers;
 	static const std::vector<const char*> g_validationLayers;
 	static const std::vector<const char*> g_deviceExtensions;
+	static const int g_maxFramesInFlight;
 
 private:
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
@@ -93,9 +94,12 @@ protected:
 	void CreateFrameBuffers();
 	void CreateCommandPool();
 	void CreateCommandBuffers();
+	void CreateSyncObjects();
 
 	void CleanupVulkan();
 	void CleanupWindow();
+
+	void DrawFrame();
 
 	bool DebugCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -124,5 +128,10 @@ protected:
 	std::vector<VkFramebuffer> m_swapChainFrameBuffers;
 	VkCommandPool m_commandPool;
 	std::vector<VkCommandBuffer> m_commandBuffers;
+	std::vector<VkSemaphore> m_imageAvailableSemaphores;
+	std::vector<VkSemaphore> m_renderFinishedSemaphores;
+	std::vector<VkFence> m_inFlightFences;
+	std::vector<VkFence> m_imagesInFlight;
+	size_t m_currentFrame;
 };
 

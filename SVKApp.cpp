@@ -50,6 +50,8 @@ const bool SVKApp::g_enableValidationLayers = true;
 const bool SVKApp::g_enableValidationLayers = false;
 #endif // _DEBUG
 
+const int SVKApp::g_maxFramesInFlight = 2;
+
 VkResult SVKApp::CreateDebugUtilsMessengerEXT(
 	VkInstance instance,
 	const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
@@ -98,7 +100,8 @@ SVKApp::SVKApp(const SVKConfig& config) :
 	m_renderPass(VK_NULL_HANDLE),
 	m_pipelineLayout(VK_NULL_HANDLE),
 	m_graphicsPipeline(VK_NULL_HANDLE),
-	m_commandPool(VK_NULL_HANDLE)
+	m_commandPool(VK_NULL_HANDLE),
+	m_currentFrame(0)
 {
 }
 
@@ -115,7 +118,9 @@ void SVKApp::Cleanup() {
 void SVKApp::Run() {
 	while (!glfwWindowShouldClose(m_window)) {
 		glfwPollEvents();
+		DrawFrame();
 	}
+	vkDeviceWaitIdle(m_logicalDevice);
 }
 
 void SVKApp::InitializeWindow() {
@@ -143,6 +148,7 @@ void SVKApp::InitializeVulkan() {
 	CreateFrameBuffers();
 	CreateCommandPool();
 	CreateCommandBuffers();
+	CreateSyncObjects();
 }
 
 void SVKApp::CreateInstance() {
@@ -566,12 +572,22 @@ void SVKApp::CreateRenderPass() {
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &colorAttachmentRef;
 
+	VkSubpassDependency dependency{};
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.srcAccessMask = 0;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
 	VkRenderPassCreateInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	renderPassInfo.attachmentCount = 1;
 	renderPassInfo.pAttachments = &colorAttachment;
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = 1;
+	renderPassInfo.pDependencies = &dependency;
 
 	vkCheckResult(vkCreateRenderPass(m_logicalDevice, &renderPassInfo, nullptr, &m_renderPass), "Create RenderPass");
 }
@@ -788,6 +804,26 @@ void SVKApp::CreateCommandBuffers() {
 	}
 }
 
+void SVKApp::CreateSyncObjects() {
+	m_imageAvailableSemaphores.resize(g_maxFramesInFlight);
+	m_renderFinishedSemaphores.resize(g_maxFramesInFlight);
+	m_inFlightFences.resize(g_maxFramesInFlight);
+	m_imagesInFlight.resize(m_swapChainImages.size(), VK_NULL_HANDLE);
+
+	VkSemaphoreCreateInfo semaphoreInfo{};
+	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	for (int i = 0; i < g_maxFramesInFlight; ++i) {
+		vkCheckResult(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Create ImageAvailable Semaphore");
+		vkCheckResult(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Create RenderFinished Semaphore");
+		vkCheckResult(vkCreateFence(m_logicalDevice, &fenceInfo, nullptr, &m_inFlightFences[i]), "Create InFlight Fence");
+	}
+}
+
 void SVKApp::CleanupWindow() {
 	glfwDestroyWindow(m_window);
 	m_window = nullptr;
@@ -796,6 +832,17 @@ void SVKApp::CleanupWindow() {
 }
 
 void SVKApp::CleanupVulkan() {
+	m_currentFrame = 0;
+	m_imagesInFlight.clear();
+	for (int i = 0; i < g_maxFramesInFlight; ++i) {
+		vkDestroyFence(m_logicalDevice, m_inFlightFences[i], nullptr);
+		vkDestroySemaphore(m_logicalDevice, m_renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(m_logicalDevice, m_imageAvailableSemaphores[i], nullptr);
+	}
+	m_inFlightFences.clear();
+	m_renderFinishedSemaphores.clear();
+	m_imageAvailableSemaphores.clear();
+
 	vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
 	m_commandPool = VK_NULL_HANDLE;
 
@@ -838,6 +885,50 @@ void SVKApp::CleanupVulkan() {
 
 	vkDestroyInstance(m_instance, nullptr);
 	m_instance = VK_NULL_HANDLE;
+}
+
+void SVKApp::DrawFrame() {
+	vkCheckResult(vkWaitForFences(m_logicalDevice, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX), "InFlight Fence Wait");
+
+	uint32_t imageIndex;
+	vkCheckResult(vkAcquireNextImageKHR(m_logicalDevice, m_swapChain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex), "Acquire Next Image");
+	if (m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+		vkCheckResult(vkWaitForFences(m_logicalDevice, 1, &m_imagesInFlight[m_currentFrame], VK_TRUE, UINT64_MAX), "InFlight Fence Wait");
+	m_imagesInFlight[imageIndex] = m_inFlightFences[m_currentFrame];
+
+	VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSemaphores;
+	submitInfo.pWaitDstStageMask = waitStages;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &m_commandBuffers[imageIndex];
+
+	VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[m_currentFrame] };
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	vkCheckResult(vkResetFences(m_logicalDevice, 1, &m_inFlightFences[m_currentFrame]), "inFlight Fence Reset");
+	vkCheckResult(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]), "Queue Submit");
+
+	VkSwapchainKHR swapChains[] = { m_swapChain };
+
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pResults = nullptr; // Optional
+
+	vkCheckResult(vkQueuePresentKHR(m_presentQueue, &presentInfo), "Queue Present");
+	vkCheckResult(vkQueueWaitIdle(m_presentQueue), "Queue Present Wait");
+
+	m_currentFrame = (m_currentFrame + 1) % g_maxFramesInFlight;
 }
 
 bool SVKApp::DebugCallback(
