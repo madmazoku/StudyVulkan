@@ -22,6 +22,14 @@ protected:
 		std::vector<VkPresentModeKHR> presentModes;
 	};
 
+	struct Vertex {
+		glm::vec2 pos;
+		glm::vec3 color;
+
+		static VkVertexInputBindingDescription GetBindingDescription();
+		static std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescriptions();
+	};
+
 public:
 	static const int g_width;
 	static const int g_height;
