@@ -74,11 +74,13 @@ protected:
 	QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physicalDevice);
 	SwapChainSupportDetails FindSwapChainSupportDetails(VkPhysicalDevice physicalDevice);
 
+	void CreateLogicalDevice();
+
+	void CreateSwapChain();
+
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
-	void CreateLogicalDevice();
 
 	void CleanupVulkan();
 	void CleanupWindow();
@@ -97,5 +99,9 @@ protected:
 	VkDevice m_logicalDevice;
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
+	VkSwapchainKHR m_swapChain;
+	std::vector<VkImage> m_swapChainImages;
+	VkFormat m_swapChainImageFormat;
+	VkExtent2D m_swapChainExtent;
 };
 
