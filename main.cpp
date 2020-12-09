@@ -1,7 +1,11 @@
+// from https://vulkan-tutorial.com/
+
+#include "SVKConfig.h"
 #include "SVKApp.h"
 
-int main() {
-    SVKApp app;
+int main(int argc, char** argv) {
+    SVKConfig config(argc, argv);
+    SVKApp app(config);
 
     try {
         app.Initialize();

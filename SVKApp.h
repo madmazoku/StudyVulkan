@@ -2,6 +2,8 @@
 
 #include "common.h"
 
+#include "SVKConfig.h"
+
 class SVKApp
 {
 protected:
@@ -47,7 +49,7 @@ private:
 		const VkAllocationCallbacks* pAllocator);
 
 public:
-	SVKApp();
+	SVKApp(const SVKConfig& config);
 
 	void Initialize();
 	void Cleanup();
@@ -82,6 +84,9 @@ protected:
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
 	void CreateImageViews();
+	
+	void CreateGraphicsPipeline();
+	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
 	void CleanupVulkan();
 	void CleanupWindow();
@@ -92,6 +97,8 @@ protected:
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
 
 protected:
+	const SVKConfig& m_config;
+
 	GLFWwindow* m_window;
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
@@ -105,5 +112,7 @@ protected:
 	VkFormat m_swapChainImageFormat;
 	VkExtent2D m_swapChainExtent;
 	std::vector<VkImageView> m_swapChainImageViews;
+	VkPipelineLayout m_pipelineLayout;
+
 };
 

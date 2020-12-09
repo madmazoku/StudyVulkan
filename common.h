@@ -9,6 +9,7 @@
 #include <glm/mat4x4.hpp>
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include <vector>
@@ -16,6 +17,7 @@
 #include <set>
 
 #include <optional>
+#include <filesystem>
 
 #ifdef _DEBUG
 #define NDEBUG
