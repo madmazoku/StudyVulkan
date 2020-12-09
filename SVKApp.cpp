@@ -152,6 +152,7 @@ SVKApp::SVKApp(const SVKConfig& config) :
 	m_vertexBufferMemory(VK_NULL_HANDLE),
 	m_indexBuffer(VK_NULL_HANDLE),
 	m_indexBufferMemory(VK_NULL_HANDLE),
+	m_descriptorPool(VK_NULL_HANDLE),
 	m_currentFrame(0),
 	m_framebufferResized(false)
 {
@@ -230,6 +231,8 @@ void SVKApp::InitializeVulkan() {
 	CreateVertexBuffer();
 	CreateIndexBuffer();
 	CreateUniformBuffers();
+	CreateDescriptorPool();
+	CreateDescriptorSets();
 	CreateCommandBuffers();
 	CreateSyncObjects();
 }
@@ -753,7 +756,7 @@ void SVKApp::CreateGraphicsPipeline() {
 	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer.lineWidth = 1.0f;
 	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterizer.depthBiasEnable = VK_FALSE;
 	rasterizer.depthBiasConstantFactor = 0.0f; // Optional
 	rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -980,6 +983,53 @@ uint32_t SVKApp::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags prope
 	throw std::runtime_error("No suitable memory type found");
 }
 
+void SVKApp::CreateDescriptorPool() {
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = static_cast<uint32_t>(m_swapChainImages.size());
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.maxSets = static_cast<uint32_t>(m_swapChainImages.size());
+
+	vkCheckResult(vkCreateDescriptorPool(m_logicalDevice, &poolInfo, nullptr, &m_descriptorPool), "Create DescriptorPool");
+}
+
+void SVKApp::CreateDescriptorSets() {
+	std::vector<VkDescriptorSetLayout> layouts(m_swapChainImages.size(), m_descriptorSetLayout);
+
+	VkDescriptorSetAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = m_descriptorPool;
+	allocInfo.descriptorSetCount = static_cast<uint32_t>(m_swapChainImages.size());
+	allocInfo.pSetLayouts = layouts.data();
+
+	m_descriptorSets.resize(m_swapChainImages.size());
+	vkCheckResult(vkAllocateDescriptorSets(m_logicalDevice, &allocInfo, m_descriptorSets.data()), "Allocate DescriptorSets");
+
+	for (size_t i = 0; i < m_swapChainImages.size(); ++i) {
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = m_uniformBuffers[i];
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(UniformBufferObject);
+
+		VkWriteDescriptorSet descriptorWrite{};
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.dstSet = m_descriptorSets[i];
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrite.descriptorCount = 1;
+		descriptorWrite.pBufferInfo = &bufferInfo;
+		descriptorWrite.pImageInfo = nullptr; // Optional
+		descriptorWrite.pTexelBufferView = nullptr; // Optional	
+
+		vkUpdateDescriptorSets(m_logicalDevice, 1, &descriptorWrite, 0, nullptr);
+	}
+}
+
 void SVKApp::CreateCommandBuffers() {
 	m_commandBuffers.resize(m_swapChainFrameBuffers.size());
 
@@ -1017,6 +1067,7 @@ void SVKApp::CreateCommandBuffers() {
 		vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
 		vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1, vertexBuffers, offsets);
 		vkCmdBindIndexBuffer(m_commandBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+		vkCmdBindDescriptorSets(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[i], 0, nullptr);
 		vkCmdDrawIndexed(m_commandBuffers[i], static_cast<uint32_t>(g_indices.size()), 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_commandBuffers[i]);
 
@@ -1104,6 +1155,9 @@ void SVKApp::CleanupSwapChain() {
 		vkDestroyFramebuffer(m_logicalDevice, frameBuffer, nullptr);
 	m_swapChainFrameBuffers.clear();
 
+	vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
+	m_descriptorPool = VK_NULL_HANDLE;
+
 	for (size_t i = 0; i < m_swapChainImages.size(); ++i) {
 		vkDestroyBuffer(m_logicalDevice, m_uniformBuffers[i], nullptr);
 		vkFreeMemory(m_logicalDevice, m_uniformBuffersMemory[i], nullptr);
@@ -1154,6 +1208,8 @@ void SVKApp::RecreateSwapChain() {
 	CreateGraphicsPipeline();
 	CreateFrameBuffers();
 	CreateUniformBuffers();
+	CreateDescriptorPool();
+	CreateDescriptorSets();
 	CreateCommandBuffers();
 }
 
