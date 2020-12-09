@@ -116,6 +116,6 @@ protected:
 	std::vector<VkImageView> m_swapChainImageViews;
 	VkRenderPass m_renderPass;
 	VkPipelineLayout m_pipelineLayout;
-
+	VkPipeline m_graphicsPipeline;
 };
 

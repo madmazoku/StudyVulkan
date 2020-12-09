@@ -96,7 +96,8 @@ SVKApp::SVKApp(const SVKConfig &config) :
 	m_swapChainImageFormat(VK_FORMAT_UNDEFINED),
 	m_swapChainExtent{ 0, 0 },
 	m_renderPass(VK_NULL_HANDLE),
-	m_pipelineLayout(VK_NULL_HANDLE)
+	m_pipelineLayout(VK_NULL_HANDLE),
+	m_graphicsPipeline(VK_NULL_HANDLE)
 {
 }
 
@@ -679,6 +680,26 @@ void SVKApp::CreateGraphicsPipeline() {
 
 	vkCheckResult(vkCreatePipelineLayout(m_logicalDevice, &pipelineLayoutInfo, nullptr, &m_pipelineLayout), "Create PipelineLayout");
 
+	VkGraphicsPipelineCreateInfo pipelineInfo{};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.stageCount = 2;
+	pipelineInfo.pStages = shaderStages;
+	pipelineInfo.pVertexInputState = &vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &rasterizer;
+	pipelineInfo.pMultisampleState = &multisampling;
+	pipelineInfo.pDepthStencilState = nullptr; // Optional
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.pDynamicState = nullptr; // Optional
+	pipelineInfo.layout = m_pipelineLayout;
+	pipelineInfo.renderPass = m_renderPass;
+	pipelineInfo.subpass = 0;
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
+	pipelineInfo.basePipelineIndex = -1; // Optional
+
+	vkCheckResult(vkCreateGraphicsPipelines(m_logicalDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline), "Create GraphicsPipeline");
+
 	vkDestroyShaderModule(m_logicalDevice, shaderVertModule, nullptr);
 	vkDestroyShaderModule(m_logicalDevice, shaderFragModule, nullptr);
 }
@@ -702,6 +723,9 @@ void SVKApp::CleanupWindow() {
 }
 
 void SVKApp::CleanupVulkan() {
+	vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
+	m_graphicsPipeline = VK_NULL_HANDLE;
+
 	vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
 	m_pipelineLayout = VK_NULL_HANDLE;
 
