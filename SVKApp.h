@@ -84,13 +84,15 @@ protected:
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
 	void CreateImageViews();
-	
+
 	void CreateRenderPass();
 
 	void CreateGraphicsPipeline();
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
 	void CreateFrameBuffers();
+	void CreateCommandPool();
+	void CreateCommandBuffers();
 
 	void CleanupVulkan();
 	void CleanupWindow();
@@ -120,5 +122,7 @@ protected:
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapChainFrameBuffers;
+	VkCommandPool m_commandPool;
+	std::vector<VkCommandBuffer> m_commandBuffers;
 };
 

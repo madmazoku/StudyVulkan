@@ -13,7 +13,7 @@ std::string JoinStrings(T strings) {
 	return ss.str();
 }
 
-static std::vector<char> ReadFile(const std::string &filename) {
+static std::vector<char> ReadFile(const std::string& filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
 	if (!file.is_open()) {
@@ -27,7 +27,7 @@ static std::vector<char> ReadFile(const std::string &filename) {
 
 	file.seekg(0);
 	file.read(buffer.data(), fileSize);
-	
+
 	file.close();
 
 	return buffer;
@@ -82,7 +82,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL SVKApp::DebugCallback(
 	return static_cast<SVKApp*>(pUserData)->DebugCallback(messageSeverity, messageType, pCallbackData) ? VK_TRUE : VK_FALSE;
 }
 
-SVKApp::SVKApp(const SVKConfig &config) :
+SVKApp::SVKApp(const SVKConfig& config) :
 	m_config(config),
 	m_window(nullptr),
 	m_instance(VK_NULL_HANDLE),
@@ -97,7 +97,8 @@ SVKApp::SVKApp(const SVKConfig &config) :
 	m_swapChainExtent{ 0, 0 },
 	m_renderPass(VK_NULL_HANDLE),
 	m_pipelineLayout(VK_NULL_HANDLE),
-	m_graphicsPipeline(VK_NULL_HANDLE)
+	m_graphicsPipeline(VK_NULL_HANDLE),
+	m_commandPool(VK_NULL_HANDLE)
 {
 }
 
@@ -140,6 +141,8 @@ void SVKApp::InitializeVulkan() {
 	CreateRenderPass();
 	CreateGraphicsPipeline();
 	CreateFrameBuffers();
+	CreateCommandPool();
+	CreateCommandBuffers();
 }
 
 void SVKApp::CreateInstance() {
@@ -575,7 +578,7 @@ void SVKApp::CreateRenderPass() {
 
 void SVKApp::CreateGraphicsPipeline() {
 	std::vector<char> shaderVert = ReadFile((m_config.m_appDir / "shader.vert.spv").string());
-	std::vector<char> shaderFrag= ReadFile((m_config.m_appDir / "./shader.frag.spv").string());
+	std::vector<char> shaderFrag = ReadFile((m_config.m_appDir / "./shader.frag.spv").string());
 
 	VkShaderModule shaderVertModule = CreateShaderModule(shaderVert);
 	VkShaderModule shaderFragModule = CreateShaderModule(shaderFrag);
@@ -591,7 +594,7 @@ void SVKApp::CreateGraphicsPipeline() {
 	shaderFragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	shaderFragStageInfo.module = shaderFragModule;
 	shaderFragStageInfo.pName = "main";
-	
+
 	VkPipelineShaderStageCreateInfo shaderStages[] = { shaderVertStageInfo, shaderFragStageInfo };
 
 	// Start Fixed Stages
@@ -735,6 +738,56 @@ void SVKApp::CreateFrameBuffers() {
 	}
 }
 
+void SVKApp::CreateCommandPool() {
+	QueueFamilyIndices queueFamilyIndices = FindQueueFamilyIndices(m_physicalDevice);
+
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+	poolInfo.flags = 0; // Optional
+
+	vkCheckResult(vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool), "Create CommandPool");
+}
+
+void SVKApp::CreateCommandBuffers() {
+	m_commandBuffers.resize(m_swapChainFrameBuffers.size());
+
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = m_commandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size());
+
+	vkCheckResult(vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_commandBuffers.data()), "Allocate CommandBuffers");
+
+	for (size_t i = 0; i < m_commandBuffers.size(); i++) {
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = 0; // Optional
+		beginInfo.pInheritanceInfo = nullptr; // Optional
+
+		vkCheckResult(vkBeginCommandBuffer(m_commandBuffers[i], &beginInfo), "Begin Command Sequence");
+
+		VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+		VkRenderPassBeginInfo renderPassInfo{};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		renderPassInfo.renderPass = m_renderPass;
+		renderPassInfo.framebuffer = m_swapChainFrameBuffers[i];
+		renderPassInfo.renderArea.offset = { 0, 0 };
+		renderPassInfo.renderArea.extent = m_swapChainExtent;
+		renderPassInfo.clearValueCount = 1;
+		renderPassInfo.pClearValues = &clearColor;
+
+		vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+		vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+		vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0);
+		vkCmdEndRenderPass(m_commandBuffers[i]);
+
+		vkCheckResult(vkEndCommandBuffer(m_commandBuffers[i]), "End Command Sequence");
+	}
+}
+
 void SVKApp::CleanupWindow() {
 	glfwDestroyWindow(m_window);
 	m_window = nullptr;
@@ -743,6 +796,9 @@ void SVKApp::CleanupWindow() {
 }
 
 void SVKApp::CleanupVulkan() {
+	vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
+	m_commandPool = VK_NULL_HANDLE;
+
 	for (const VkFramebuffer& frameBuffer : m_swapChainFrameBuffers)
 		vkDestroyFramebuffer(m_logicalDevice, frameBuffer, nullptr);
 	m_swapChainFrameBuffers.clear();
