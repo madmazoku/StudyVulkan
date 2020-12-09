@@ -19,6 +19,7 @@
 
 #include <optional>
 #include <filesystem>
+#include <chrono>
 
 #ifdef _DEBUG
 #define NDEBUG

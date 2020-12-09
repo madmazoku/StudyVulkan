@@ -55,10 +55,21 @@ const bool SVKApp::g_enableValidationLayers = false;
 const int SVKApp::g_maxFramesInFlight = 2;
 
 const std::vector<SVKApp::Vertex> SVKApp::g_vertices = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}}
 };
+
+//const std::vector<SVKApp::Vertex> SVKApp::g_vertices = {
+//	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+//	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+//	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+//	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+//};
 
 // *********************************************************************************
 
@@ -109,7 +120,7 @@ VkVertexInputBindingDescription SVKApp::Vertex::GetBindingDescription() {
 
 std::array<VkVertexInputAttributeDescription, 2> SVKApp::Vertex::GetAttributeDescriptions() {
 	std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-	
+
 	attributeDescriptions[0].binding = 0;
 	attributeDescriptions[0].location = 0;
 	attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -160,6 +171,9 @@ void SVKApp::Cleanup() {
 }
 
 void SVKApp::Run() {
+	auto startTm = std::chrono::high_resolution_clock::now();
+	auto prevTm = startTm;
+	uint32_t frameCount = 0;
 	while (!glfwWindowShouldClose(m_window)) {
 		glfwPollEvents();
 		if (m_framebufferResized) {
@@ -167,6 +181,7 @@ void SVKApp::Run() {
 			m_framebufferResized = false;
 		}
 		try {
+			++frameCount;
 			DrawFrame();
 		}
 		catch (VkException& e) {
@@ -174,6 +189,16 @@ void SVKApp::Run() {
 				RecreateSwapChain();
 			else
 				throw;
+		}
+		auto currTm = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> diffPrevTm = currTm - prevTm;
+		if (diffPrevTm.count() > 1.0f) {
+			std::chrono::duration<double> diffStartTm = currTm - startTm;
+			std::stringstream ss;
+			ss << g_appName << " [" << int(diffStartTm.count()) << "] FPS: " << (frameCount / diffPrevTm.count());
+			glfwSetWindowTitle(m_window, ss.str().c_str());
+			prevTm = currTm;
+			frameCount = 0;
 		}
 	}
 	vkDeviceWaitIdle(m_logicalDevice);
@@ -945,7 +970,7 @@ void SVKApp::CreateCommandBuffers() {
 		vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
 		vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1, vertexBuffers, offsets);
-		vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0);
+		vkCmdDraw(m_commandBuffers[i], 6, 1, 0, 0);
 		vkCmdEndRenderPass(m_commandBuffers[i]);
 
 		vkCheckResult(vkEndCommandBuffer(m_commandBuffers[i]), "End Command Sequence");
