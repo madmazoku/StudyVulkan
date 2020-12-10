@@ -112,11 +112,36 @@ protected:
 	void CreateFrameBuffers();
 	void CreateCommandPool();
 	
+	void CreateTextureImage();
+	void CreateImage(
+		uint32_t width, 
+		uint32_t height, 
+		VkFormat format, 
+		VkImageTiling tiling, 
+		VkImageUsageFlags usage, 
+		VkMemoryPropertyFlags properties, 
+		VkImage& image, 
+		VkDeviceMemory& imageMemory
+	);
+	void TransitionImageLayout(
+		VkImage image,
+		VkFormat format,
+		VkImageLayout oldLayout,
+		VkImageLayout newLayout
+	);
+	void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
 	void CreateUniformBuffers();
 
-	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+	void CreateBuffer(
+		VkDeviceSize size, 
+		VkBufferUsageFlags usage, 
+		VkMemoryPropertyFlags properties, 
+		VkBuffer& buffer, 
+		VkDeviceMemory& bufferMemory
+	);
 	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
@@ -133,6 +158,8 @@ protected:
 
 	void DrawFrame();
 	void UpdateUniformBuffer(uint32_t currentImage);
+	VkCommandBuffer BeginSingleTimeCommands();
+	void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
 
 	bool OnDebug(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -163,6 +190,8 @@ protected:
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapChainFrameBuffers;
 	VkCommandPool m_commandPool;
+	VkImage m_textureImage;
+	VkDeviceMemory m_textureImageMemory;
 	VkBuffer m_vertexBuffer;
 	VkDeviceMemory m_vertexBufferMemory;
 	VkBuffer m_indexBuffer;

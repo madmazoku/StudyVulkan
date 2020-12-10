@@ -148,6 +148,8 @@ SVKApp::SVKApp(const SVKConfig& config) :
 	m_pipelineLayout(VK_NULL_HANDLE),
 	m_graphicsPipeline(VK_NULL_HANDLE),
 	m_commandPool(VK_NULL_HANDLE),
+	m_textureImage(VK_NULL_HANDLE),
+	m_textureImageMemory(VK_NULL_HANDLE),
 	m_vertexBuffer(VK_NULL_HANDLE),
 	m_vertexBufferMemory(VK_NULL_HANDLE),
 	m_indexBuffer(VK_NULL_HANDLE),
@@ -228,6 +230,7 @@ void SVKApp::InitializeVulkan() {
 	CreateGraphicsPipeline();
 	CreateFrameBuffers();
 	CreateCommandPool();
+	CreateTextureImage();
 	CreateVertexBuffer();
 	CreateIndexBuffer();
 	CreateUniformBuffers();
@@ -866,19 +869,176 @@ void SVKApp::CreateCommandPool() {
 	vkCheckResult(vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool), "Create CommandPool");
 }
 
+void SVKApp::CreateTextureImage() {
+	int texWidth, texHeight, texChannels;
+	stbi_uc* pixels = stbi_load((m_config.m_appDir / "texture.jpg").string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	VkDeviceSize imageSize = static_cast<long>(texWidth) * static_cast<long>(texHeight) * 4;
+
+	if (!pixels)
+		throw std::runtime_error("failed to load texture image!");
+
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMemory;
+
+	CreateBuffer(
+		imageSize, 
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+		stagingBuffer, 
+		stagingBufferMemory
+	);
+
+	void* data;
+	vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, imageSize, 0, &data);
+	memcpy(data, pixels, static_cast<size_t>(imageSize));
+	vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
+
+	stbi_image_free(pixels);
+
+	CreateImage(
+		texWidth, 
+		texHeight, 
+		VK_FORMAT_R8G8B8A8_SRGB, 
+		VK_IMAGE_TILING_OPTIMAL, 
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+		m_textureImage, 
+		m_textureImageMemory
+	);
+
+	TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	CopyBufferToImage(stagingBuffer, m_textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+	TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
+	vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
+}
+
+void SVKApp::CreateImage(
+	uint32_t width, 
+	uint32_t height, 
+	VkFormat format, 
+	VkImageTiling tiling, 
+	VkImageUsageFlags usage, 
+	VkMemoryPropertyFlags properties, 
+	VkImage& image, 
+	VkDeviceMemory& imageMemory
+) {
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent.width = width;
+	imageInfo.extent.height = height;
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = format;
+	imageInfo.tiling = tiling;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageInfo.usage = usage;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	vkCheckResult(vkCreateImage(m_logicalDevice, &imageInfo, nullptr, &image), "Create Image");
+
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(m_logicalDevice, image, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+
+	vkCheckResult(vkAllocateMemory(m_logicalDevice, &allocInfo, nullptr, &imageMemory), "Allocate Texture Memory");
+	vkCheckResult(vkBindImageMemory(m_logicalDevice, image, imageMemory, 0), "Bind Image Memory");
+}
+
+void SVKApp::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+	VkImageMemoryBarrier barrier{};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = oldLayout;
+	barrier.newLayout = newLayout;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+
+	VkPipelineStageFlags sourceStage;
+	VkPipelineStageFlags destinationStage;
+	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	}
+	else
+		throw std::runtime_error("unsupported layout transition!");
+
+	vkCmdPipelineBarrier(commandBuffer, sourceStage,  destinationStage, 0, 0, nullptr, 0, nullptr, 1,  &barrier);
+
+	EndSingleTimeCommands(commandBuffer);
+}
+
+void SVKApp::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+	VkBufferImageCopy region{};
+	region.bufferOffset = 0;
+	region.bufferRowLength = 0;
+	region.bufferImageHeight = 0;
+
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel = 0;
+	region.imageSubresource.baseArrayLayer = 0;
+	region.imageSubresource.layerCount = 1;
+
+	region.imageOffset = { 0, 0, 0 };
+	region.imageExtent = { width, height, 1 };
+
+	vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+	EndSingleTimeCommands(commandBuffer);
+}
+
 void SVKApp::CreateVertexBuffer() {
 	VkDeviceSize bufferSize = sizeof(g_vertices[0]) * g_vertices.size();
 
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
-	CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+	CreateBuffer(
+		bufferSize, 
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+		stagingBuffer, 
+		stagingBufferMemory
+	);
 
 	void* data;
 	vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
 	memcpy(data, g_vertices.data(), static_cast<size_t>(bufferSize));
 	vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
 
-	CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
+	CreateBuffer(
+		bufferSize, 
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+		m_vertexBuffer, 
+		m_vertexBufferMemory
+	);
 
 	CopyBuffer(stagingBuffer, m_vertexBuffer, bufferSize);
 
@@ -891,14 +1051,26 @@ void SVKApp::CreateIndexBuffer() {
 
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
-	CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+	CreateBuffer(
+		bufferSize, 
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+		stagingBuffer, 
+		stagingBufferMemory
+	);
 
 	void* data;
 	vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
 	memcpy(data, g_indices.data(), (size_t)bufferSize);
 	vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
 
-	CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);
+	CreateBuffer(
+		bufferSize, 
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+		m_indexBuffer, 
+		m_indexBufferMemory
+	);
 
 	CopyBuffer(stagingBuffer, m_indexBuffer, bufferSize);
 
@@ -913,10 +1085,22 @@ void SVKApp::CreateUniformBuffers() {
 	m_uniformBuffersMemory.resize(m_swapChainImages.size());
 
 	for (size_t i = 0; i < m_swapChainImages.size(); ++i)
-		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
+		CreateBuffer(
+			bufferSize, 
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+			m_uniformBuffers[i], 
+			m_uniformBuffersMemory[i]
+		);
 }
 
-void SVKApp::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+void SVKApp::CreateBuffer(
+	VkDeviceSize size, 
+	VkBufferUsageFlags usage, 
+	VkMemoryPropertyFlags properties, 
+	VkBuffer& buffer, 
+	VkDeviceMemory& bufferMemory
+) {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferInfo.size = size;
@@ -938,38 +1122,13 @@ void SVKApp::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryP
 }
 
 void SVKApp::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
-	VkCommandBufferAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandPool = m_commandPool;
-	allocInfo.commandBufferCount = 1;
-
-	VkCommandBuffer commandBuffer;
-	vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, &commandBuffer);
-
-	VkCommandBufferBeginInfo beginInfo{};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
 	VkBufferCopy copyRegion{};
-	copyRegion.srcOffset = 0; // Optional
-	copyRegion.dstOffset = 0; // Optional
 	copyRegion.size = size;
 	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-	vkEndCommandBuffer(commandBuffer);
-
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
-
-	vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-	vkQueueWaitIdle(m_graphicsQueue);
-
-	vkFreeCommandBuffers(m_logicalDevice, m_commandPool, 1, &commandBuffer);
+	EndSingleTimeCommands(commandBuffer);
 }
 
 uint32_t SVKApp::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -1129,6 +1288,11 @@ void SVKApp::CleanupVulkan() {
 	vkFreeMemory(m_logicalDevice, m_vertexBufferMemory, nullptr);
 	m_vertexBufferMemory = VK_NULL_HANDLE;
 
+	vkDestroyImage(m_logicalDevice, m_textureImage, nullptr);
+	m_textureImage = VK_NULL_HANDLE;
+	vkFreeMemory(m_logicalDevice, m_textureImageMemory, nullptr);
+	m_textureImageMemory = VK_NULL_HANDLE;
+
 	vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
 	m_commandPool = VK_NULL_HANDLE;
 
@@ -1276,6 +1440,40 @@ void SVKApp::UpdateUniformBuffer(uint32_t currentImage) {
 	memcpy(data, &ubo, sizeof(ubo));
 	vkUnmapMemory(m_logicalDevice, m_uniformBuffersMemory[currentImage]);
 }
+
+VkCommandBuffer SVKApp::BeginSingleTimeCommands() {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = m_commandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, &commandBuffer);
+
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+	return commandBuffer;
+}
+
+void SVKApp::EndSingleTimeCommands(VkCommandBuffer commandBuffer) {
+	vkEndCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(m_graphicsQueue);
+
+	vkFreeCommandBuffers(m_logicalDevice, m_commandPool, 1, &commandBuffer);
+}
+
 
 bool SVKApp::OnDebug(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
